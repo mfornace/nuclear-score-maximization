@@ -1,0 +1,8 @@
+{
+    "dependencies": [
+        "armadillo",
+        "boost-graph",
+        "nlohmann-json",
+        "tbb"
+    ]
+}

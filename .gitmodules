@@ -1,0 +1,9 @@
+[submodule "external/vcpkg"]
+	path = external/vcpkg
+	url = https://github.com/Microsoft/vcpkg.git
+[submodule "external/lilwil"]
+	path = external/lilwil
+	url = https://github.com/mfornace/lilwil.git
+[submodule "external/rchol"]
+	path = external/rchol
+	url = https://github.com/mfornace/rchol.git
