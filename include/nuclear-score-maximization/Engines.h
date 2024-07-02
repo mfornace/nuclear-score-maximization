@@ -1,4 +1,8 @@
 #pragma once
+/**
+    Engines.h: adaptors for different operator implementations (dense, sparse, factorized, ...)
+*/
+
 #include "Matrix.h"
 #include <thread>
 
@@ -6,6 +10,7 @@ namespace nsm {
 
 /******************************************************************************************/
 
+// Operator formed as A A^T from given dense matrix A
 template <class T>
 struct DenseSqrtMatrix {
     Mat<T> A;
@@ -31,6 +36,7 @@ struct DenseSqrtMatrix {
 
 /******************************************************************************************/
 
+// Operator formed as A A^T from given sparse matrix A
 template <class T>
 struct SparseSqrtMatrix {
     SpMat<T> A, At;
@@ -48,7 +54,7 @@ struct SparseSqrtMatrix {
             return Col<T>(la::sum(la::square(la::chol(Mat<T>(At * At.t()), "lower").t() * At), 0).t())(x);
         } else {
             Col<T> const o(la::sum(la::square(A * At), 0).t());
-            NSM_REQUIRE(len(o), ==, n());
+            NSM_REQUIRE(std::size(o), ==, n(), "diagonal size error");
             return o(x);
         }
     }
@@ -66,6 +72,7 @@ struct SparseSqrtMatrix {
 
 /******************************************************************************************/
 
+// Operator formed as K from given dense matrix K
 template <class T>
 struct DenseMatrix {
     Mat<T> K;
@@ -92,6 +99,7 @@ struct DenseMatrix {
 
 /******************************************************************************************/
 
+// Operator formed as K from given sparse matrix K
 template <class T>
 struct SparseMatrix {
     SpMat<T> K;
@@ -107,11 +115,12 @@ struct SparseMatrix {
     auto n() const {return K.n_rows;}
 
     template <class V>
-    Mat<T> full(V const &v) const {return (K.cols(x.head(v.n_rows)) * v).rows(x);}
+    Mat<T> full(V const &v) const {return (K.cols(x.head(v.n_rows)) * v).eval().rows(x);}
 };
 
 /******************************************************************************************/
 
+// Operator formed as K from given dense matrix K but also possessing factorization C C^T = K
 template <class T>
 struct FactorizedMatrix : DenseMatrix<T> {
     using base_type = DenseMatrix<T>;
@@ -133,6 +142,7 @@ struct FactorizedMatrix : DenseMatrix<T> {
 
 /******************************************************************************************/
 
+// Operator formed as K from given sparse matrix K but also possessing factorization C C^T = K
 template <class T>
 struct SparseFactorizedMatrix : SparseMatrix<T> {
     using base_type = SparseMatrix<T>;
@@ -144,21 +154,23 @@ struct SparseFactorizedMatrix : SparseMatrix<T> {
     // full() is applied in the original ordered basis, so it has to be pivoted appropriately
     // sqrt() is applied only to an unordered basis, so pivoting only on its first dimensions
     template <class V>
-    Mat<T> sqrt(V const &v) const {return (C * v).rows(x);}
+    Mat<T> sqrt(V const &v) const {return (C * v).eval().rows(x);}
 
     auto m() const {return C.n_cols;}
 };
 
 /******************************************************************************************/
 
+// Random iid Gaussian matrix
 template <class T>
 Mat<T> gaussians(la::uword n, la::uword z) {
-    if (z == n) return la::eye(n, n) * std::sqrt(T(n));
+    // if (z == n) return la::eye(n, n) * std::sqrt(T(n)); // For debugging
     return Mat<T>(n, z, la::fill::randn);
 }
 
 /******************************************************************************************/
 
+// Matrix-free selection algorithm, forms base of other algorithms
 template <class T>
 struct RandomizedSelect {
     Mat<T> U, S;
@@ -224,13 +236,14 @@ struct RandomizedSelect {
 
 /******************************************************************************************/
 
+// Exact selection algorithm which maintains numerator and denominator at all times
 template <class T>
 struct ExactSelect : RandomizedSelect<T> {
     using base_type = RandomizedSelect<T>;
     using base_type::S;
     Col<T> d, t, w, f;
 
-    auto n() const {return len(d);}
+    auto n() const {return std::size(d);}
     
     template <class M>
     ExactSelect(M const &K, real threshold, la::uword k) 
@@ -267,6 +280,7 @@ struct ExactSelect : RandomizedSelect<T> {
 
 /******************************************************************************************/
 
+// Exact Laplacian selection algorithm which maintains numerator and denominator at all times
 template <class T>
 struct ExactLaplacianSelect : ExactSelect<T> {
     using base_type = ExactSelect<T>;
@@ -359,6 +373,7 @@ struct ExactLaplacianSelect : ExactSelect<T> {
 
 /******************************************************************************************/
 
+// Matrix-free Laplacian selection algorithm
 template <class T>
 struct RandomizedLaplacianSelect : RandomizedSelect<T> {
     using base_type = RandomizedSelect<T>;

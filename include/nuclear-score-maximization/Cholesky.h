@@ -1,6 +1,9 @@
 #pragma once
+/**
+Cholesky.h: low-level routines for sparse matvecs and sparse triangular solves using armadillo
+ */
+
 #include "Matrix.h"
-#include <queue>
 
 namespace nsm {
 
@@ -17,12 +20,12 @@ Col<T> sparse_matvec(SpMat<T> const &A, V const &B, I const &x={}) {
     if (TransposeA) {
         izip(O, [&](auto j, auto &o) {
             la::uword const b = A.col_ptrs[x(j)], e = A.col_ptrs[x(j)+1];
-            zip(view(A.row_indices+b, A.row_indices+e), view(A.values+b, A.values+e), [&](auto i, T t) {o += t * Bp[i];});
+            zip(View(A.row_indices+b, A.row_indices+e), View(A.values+b, A.values+e), [&](auto i, T t) {o += t * Bp[i];});
         });
     } else {
         for (la::uword j : range(B.n_rows)) {
             la::uword const b = A.col_ptrs[x(j)], e = A.col_ptrs[x(j)+1];
-            zip(view(A.row_indices+b, A.row_indices+e), view(A.values+b, A.values+e), [&, z=Bp[j]](auto i, T t) {Op[i] += t * z;});
+            zip(View(A.row_indices+b, A.row_indices+e), View(A.values+b, A.values+e), [&, z=Bp[j]](auto i, T t) {Op[i] += t * z;});
         }
     }
     return O;
@@ -39,7 +42,7 @@ Mat<T> sparse_matmul(SpMat<T> const &A, M const &B, I const &x={}) {
     T const *Bp = Bt.memptr();
     for (la::uword j : range(B.n_rows)) {
         la::uword const b = A.col_ptrs[x(j)], e = A.col_ptrs[x(j)+1];
-        zip(view(A.row_indices+b, A.row_indices+e), view(A.values+b, A.values+e), [&](auto i, auto t) {
+        zip(View(A.row_indices+b, A.row_indices+e), View(A.values+b, A.values+e), [&](auto i, auto t) {
             zip(ptr_view(Op + O.n_rows * i, O.n_rows), ptr_view(Bp + Bt.n_rows * j, Bt.n_rows), [t](auto &o, auto const &b) {o += t * b;});
         });
     }
@@ -54,14 +57,11 @@ auto sparse_column_subset(M const &A, la::uword i) {
     auto const diag = (m < e && A.row_indices[m] == i) ? A.values[m] : 0;
     if (Upper) b = m+1;
     else e = m;
-    return std::make_tuple(view(A.row_indices + b, A.row_indices + e), 
-                          view(A.values + b, A.values + e), diag);
+    return std::make_tuple(View(A.row_indices + b, A.row_indices + e), 
+                           View(A.values + b, A.values + e), diag);
 }
 
-static_assert(is_sparse<SpMat<real>>);
-static_assert(!is_sparse<Mat<real>>);
-
-template <bool Upper, class X, class S, class V, NSM_IF(is_sparse<S>)>
+template <bool Upper, class X, class S, class V, NSM_IF(la::is_sparse<S>)>
 void column_vdot(X &x, S const &A, V const &b, uint i) {
     auto const [rows, values, diag] = sparse_column_subset<Upper>(A, i);
     if (diag) {
@@ -75,7 +75,7 @@ void column_vdot(X &x, S const &A, V const &b, uint i) {
 //     X.row(i) = (B.row(i) - A.col(i).t() * X) / A(i, i);
 // }
 
-template <bool Upper, class S, class M, class M2, NSM_IF(is_sparse<S>)>
+template <bool Upper, class S, class M, class M2, NSM_IF(la::is_sparse<S>)>
 void column_mdot(M &X, S const &A, M2 const &B, uint i) {
     auto const [rows, values, diag] = sparse_column_subset<Upper>(A, i);
     if (diag) {

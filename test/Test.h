@@ -1,9 +1,8 @@
 #pragma once
 #include <lilwil/Test.h>
+#include <lilwil/Macros.h>
 
 namespace nsm {
-
-#define HERE LILWIL_HERE
 
 using Context = lilwil::Context;
 

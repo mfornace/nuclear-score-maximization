@@ -1,5 +1,8 @@
 #pragma once
-// #include "Chebyshev.h"
+/**
+    Preconditioning.h: routines to incorporate rchol preconditioner, perform Chebyshev interpolation, and perform subspace iteration
+*/
+
 #include "Cholesky.h"
 #include "Matrix.h"
 #include "Execution.h"
@@ -16,10 +19,14 @@ namespace nsm {
 
 /******************************************************************************************/
 
+// Conversion to rchol from armadillo
 inline SparseCSR to_csr(SpMat<real> const &A) {
-    return {ptr_view(A.col_ptrs, A.n_cols+1), ptr_view(A.row_indices, A.n_nonzero), ptr_view(A.values, A.n_nonzero)};
+    return {vec<std::size_t>(A.col_ptrs, A.col_ptrs+A.n_cols+1), 
+            vec<std::size_t>(A.row_indices, A.row_indices + A.n_nonzero), 
+            vec<real>(A.values, A.values + A.n_nonzero)};
 }
 
+// Conversion from rchol to armadillo
 inline SpMat<real> to_spmat(SparseCSR const &A) {
     la::uword const n = A.size(), nnz = A.nnz();
     return SpMat<real>(vmap<la::uvec>(ptr_view(A.colIdx, nnz)), vmap<la::uvec>(ptr_view(A.rowPtr, n+1)), vmap<la::Col<double>>(ptr_view(A.val, nnz)), n, n);
@@ -27,6 +34,7 @@ inline SpMat<real> to_spmat(SparseCSR const &A) {
 
 /******************************************************************************************/
 
+// Generate randomized Cholesky factor given sparse matrix A and random number generator
 inline SpMat<real> rchol(rchol_rng &gen, SpMat<real> const &A) {
     SparseCSR G, Ar = to_csr(A);
     rchol(gen, Ar, G);
@@ -35,9 +43,10 @@ inline SpMat<real> rchol(rchol_rng &gen, SpMat<real> const &A) {
 
 /******************************************************************************************/
 
+// Conjugate gradient function which includes preconditioner and stopping condition inputs
 template <class O, class M, class B, class P, class C>
 std::size_t conjugate_gradient(O &&x, M const &A, B const &b, P &&preconditioner, C &&condition) {
-    using T = typename decltype(x.eval())::elem_type;
+    using T = typename std::decay_t<decltype(x.eval())>::elem_type;
     Col<T> r = b - A(x), z = preconditioner(r), p = z, Ap;
     T rz = la::dot(r, z);
     for (std::size_t t = 0; !condition(r, t); ++t) {
@@ -55,6 +64,7 @@ std::size_t conjugate_gradient(O &&x, M const &A, B const &b, P &&preconditioner
 
 /******************************************************************************************/
 
+// Facilities to make Boost graph from a sparse matrix
 using SimpleDirectedGraph = boost::adjacency_list<boost::vecS, boost::vecS, boost::directedS>;
 
 template <class T>
@@ -66,6 +76,7 @@ auto directed_adjacency_list(SpMat<T> const &A) {
 
 /******************************************************************************************/
 
+// Minimum degree ordering algorithm (can be slow for large graphs)
 // Returns:
 //      perm: map(old index -> new index)
 //      inverse_perm: map(new index -> old index)
@@ -101,24 +112,27 @@ SpMat<T> permute_spmat(SpMat<T> const &A, V const &map) {
 
 /******************************************************************************************/
 
+// Preconditioner iterative options
 struct PreconditionedOptions {
     real tolerance = 1e-8;
     la::uword iters = 1000;
 };
 
+// Convergence failure for iterative methods
 template <class T>
 struct ConvergenceFailure : std::runtime_error {
     vec<T> history;
     Col<T> residual, h;
     T tolerance;
 
-    ConvergenceFailure(string s, vec<T> hist, Col<T> r, Col<T> h, T t) 
+    ConvergenceFailure(std::string s, vec<T> hist, Col<T> r, Col<T> h, T t) 
         : std::runtime_error(std::move(s)), history(std::move(hist)), residual(std::move(r)), h(std::move(h)), tolerance(t) {}
 };
 
+// Operator using an approximately factorized Laplacian
 template <class T>
 struct PreconditionedMatrix {
-    Local executor;
+    Executor executor;
     std::function<void(std::size_t, vec<T>)> callback;
     SpMat<T> A, U, L; // A: the Laplacian, U and L: inverses of triangular preconditioning factors
     Col<T> h; // stationary eigenvector of the Laplacian -- not the preconditioned matrix!!
@@ -129,7 +143,7 @@ struct PreconditionedMatrix {
 
     PreconditionedMatrix() = default;
 
-    PreconditionedMatrix(Local ex, SpMat<T> l, SpMat<T> u, Col<T> h0, PreconditionedOptions const &ops) 
+    PreconditionedMatrix(Executor ex, SpMat<T> l, SpMat<T> u, Col<T> h0, PreconditionedOptions const &ops) 
         : executor(std::move(ex)), A(std::move(l)), U(std::move(u)), L(U.t()), h(std::move(h0)), o(vmap<la::uvec>(range(n()))),
           tolerance(ops.tolerance), iters(ops.iters) {
             if (U(U.n_rows-1, U.n_rows-1) == 0) {
@@ -188,6 +202,12 @@ struct PreconditionedMatrix {
 
 /******************************************************************************************/
 
+struct AlwaysFalse {
+    template <class ...Ts>
+    constexpr bool operator()(Ts const &...) const {return false;}
+};
+
+// Simple power method implementation
 template <class T, class M, class F=AlwaysFalse>
 T power_method(M const &K, la::uword n, la::uword iters, F &&predicate={}) {
     Col<T> x(n, la::fill::randn), y;
@@ -205,13 +225,14 @@ T power_method(M const &K, la::uword n, la::uword iters, F &&predicate={}) {
 
 /******************************************************************************************/
 
+// Simple subspace method options and method
 struct SimultaneousIterationOptions {
     la::uword iters, n = 0, k, kmax = 0;
     la::uword max_k() const {return kmax ? kmax : std::numeric_limits<la::uword>::max();}
 };
 
 template <class T, class M, class F>
-auto psd_simultaneous_iteration(Local const &ex, M const &K, F &&predicate, SimultaneousIterationOptions const &ops) {
+auto psd_simultaneous_iteration(Executor const &ex, M const &K, F &&predicate, SimultaneousIterationOptions const &ops) {
     la::uword const batch = ex.n_workers();
     la::uword const k = min(ops.max_k(), min(ops.n, std::ceil(real(min(ops.n, ops.k)) / batch) * batch)); // Number of columns to actually use
     Mat<T> X(ops.n, k, la::fill::randn), Q, R;
@@ -219,7 +240,8 @@ auto psd_simultaneous_iteration(Local const &ex, M const &K, F &&predicate, Simu
     T tr = 0;
     for (auto t : range(ops.iters)) {
         NSM_ASSERT(la::qr_econ(Q, R, X), "QR decomposition failed in psd_simultaneous_iteration()");
-        NSM_REQUIRE(la::shape(X), ==, la::shape(Q));
+        NSM_REQUIRE(X.n_rows, ==, Q.n_rows, "QR rows do not match");
+        NSM_REQUIRE(X.n_cols, ==, Q.n_cols, "QR cols do not match");
         ex.map(range(k), [&](auto i) {K(X.unsafe_col(i), Q.unsafe_col(i));});
         T const tr2 = la::accu(la::square(X));
         if (predicate(t, tr, tr2)) break;
@@ -227,12 +249,12 @@ auto psd_simultaneous_iteration(Local const &ex, M const &K, F &&predicate, Simu
     }
     NSM_ASSERT(la::eig_sym(e, X.t() * X), "Eigendecomposition failed in psd_simultaneous_iteration()", X.t() * X);
     e = la::sqrt(e.clamp(0, std::numeric_limits<T>::infinity()));
-    sort(e, greater_abs);
+    sort(e, [](auto const &x, auto const &y) {return std::abs(x) > std::abs(y);});
     return std::make_pair(std::move(e), std::move(Q));
 }
 
 template <class T, class M, class F>
-auto svd_simultaneous_iteration(Local const &ex, M const &A, F &&predicate, SimultaneousIterationOptions ops) {
+auto svd_simultaneous_iteration(Executor const &ex, M const &A, F &&predicate, SimultaneousIterationOptions ops) {
     ops.kmax = min(min(ops.max_k(), A.n_rows), A.n_cols);
     ops.n = A.n_rows;
     auto p = psd_simultaneous_iteration<T>(ex, [&](auto &&y, auto const &x) {y = A * A.t() * x;}, predicate, ops);
@@ -242,6 +264,17 @@ auto svd_simultaneous_iteration(Local const &ex, M const &A, F &&predicate, Simu
 
 /******************************************************************************************/
 
+// Returns Chebyshev roots in ascending order
+template <class T>
+Col<T> chebyshev_points(T a, T b, uint n) {
+    return vmap<Col<T>>(range(n), [f=T(M_PI) / (2 * n), a, b](uint k) {
+        return (1 - std::cos((2 * k + 1) * f)) / 2 * (b - a) + a;
+    });
+}
+
+/******************************************************************************************/
+
+// Chebyshev interpolation options
 struct InterpolationOptions {
     real chebyshev_tolerance = 1e-8;
     uint power_iters = 100;
@@ -251,6 +284,7 @@ struct InterpolationOptions {
 
 /******************************************************************************************/
 
+// Chebyshev interpolator object
 template <class T>
 struct InvSqrtInterpolation {
     T a, b;
@@ -259,9 +293,9 @@ struct InvSqrtInterpolation {
     InvSqrtInterpolation(T a, T b, uint pts) : a(a), b(b), cs(pts, la::fill::none) {
         Col<real> const xs = chebyshev_points<real>(-1, 1, pts);
         Col<real> const fs = la::pow((xs + 1) / 2 * (b - a) + a, -0.5);
-        Col<real> t0(len(xs), la::fill::ones), t1 = std::sqrt(2.0) * xs, t2 = 2 * xs % t1 - std::sqrt(2.0);
+        Col<real> t0(std::size(xs), la::fill::ones), t1 = std::sqrt(2.0) * xs, t2 = 2 * xs % t1 - std::sqrt(2.0);
         for (auto i : indices(xs)) {
-            cs(i) = la::dot(fs, t0) / len(xs);
+            cs(i) = la::dot(fs, t0) / std::size(xs);
             t0.swap(t1);
             t1.swap(t2);
             t2 = 2 * xs % t1 - t0;
@@ -278,7 +312,7 @@ struct InvSqrtInterpolation {
             O += cs(i) * X0;
             X0.swap(X1);
             X1.swap(X2);
-            if (i+2 < len(cs)) X2 = 4 / (b - a) * f(X1) + -(2 + 4 / (b - a) * a) * X1 - X0;
+            if (i+2 < std::size(cs)) X2 = 4 / (b - a) * f(X1) + -(2 + 4 / (b - a) * a) * X1 - X0;
         }
         return O;
     }
@@ -286,10 +320,11 @@ struct InvSqrtInterpolation {
 
 /******************************************************************************************/
 
+// Function to decide number of Chebyshev nodes
 inline uint chebyshev_isqrt_points(real k, real e) {
     if (k == 1) return 1;
-    NSM_REQUIRE(k, >, 1);
-    NSM_REQUIRE(e, >, 0);
+    NSM_REQUIRE(k, >, 1, "invalid number of nodes in chebyshev_isqrt_points()");
+    NSM_REQUIRE(e, >, 0, "invalid epsilon in chebyshev_isqrt_points()");
     uint n = std::ceil(
           (1 - 2 * std::log(e) + 2 * std::log(std::sqrt(k) - 1))
         / (4 * std::log(std::sqrt(k) + 1) - 2 * std::log(k - 1)));
@@ -305,8 +340,9 @@ inline uint chebyshev_isqrt_points(real k, real e) {
 
 /******************************************************************************************/
 
+// Function to create inverse square root interpolation including subtraction of stationary mode
 template <class T>
-InvSqrtInterpolation<T> stationary_isqrt_interpolation(Local const &ex, PreconditionedMatrix<T> const &p, InterpolationOptions const &ops) {
+InvSqrtInterpolation<T> stationary_isqrt_interpolation(Executor const &ex, PreconditionedMatrix<T> const &p, InterpolationOptions const &ops) {
     T const min = 1 / psd_simultaneous_iteration<T>(ex, [&](auto &&x, Col<T> b) { // solve x = (U^-1 A L^-1)^-1 b via CG
         b -= p.v * la::dot(b, p.v);
         Col<T> const Lb = upper_solve(p.L, b);
@@ -338,6 +374,7 @@ InvSqrtInterpolation<T> stationary_isqrt_interpolation(Local const &ex, Precondi
 
 /******************************************************************************************/
 
+// Operator extending PreconditionedMatrix to apply square roots using Chebyshev interpolation
 template <class T>
 struct PreconditionedSqrt : PreconditionedMatrix<T> {
     using base_type = PreconditionedMatrix<T>;
@@ -345,7 +382,7 @@ struct PreconditionedSqrt : PreconditionedMatrix<T> {
     
     PreconditionedSqrt() = default;
 
-    PreconditionedSqrt(Local ex, SpMat<T> l, SpMat<T> u, Col<T> h, PreconditionedOptions const &o, InterpolationOptions const &s) : 
+    PreconditionedSqrt(Executor ex, SpMat<T> l, SpMat<T> u, Col<T> h, PreconditionedOptions const &o, InterpolationOptions const &s) : 
         base_type(std::move(ex), std::move(l), std::move(u), std::move(h), o), interpolation(stationary_isqrt_interpolation(base_type::executor, *this, s)) {}
 
     Mat<T> sqrt(Mat<T> const &B) const {
@@ -355,7 +392,7 @@ struct PreconditionedSqrt : PreconditionedMatrix<T> {
             return O;
         }
         auto const &p = static_cast<base_type const &>(*this);
-        NSM_REQUIRE(B.n_rows, ==, len(p.v));
+        NSM_REQUIRE(B.n_rows, ==, std::size(p.v), "size mismatch in PreconditionedSqrt()");
         Mat<T> C = interpolation(B, [&](auto const &B) {
             Mat<T> O = lower_solve(p.U, sparse_matmul(p.A, upper_solve(p.L, B))); // = p.preconditioned_inverse() * B 
             O -= p.v * p.v.t() * O; // needed to prevent numerical precision from blowing up the stationary mode

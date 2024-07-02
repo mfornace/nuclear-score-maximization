@@ -10,13 +10,12 @@ set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg/scripts/buil
 project(nuclear-score-maximization VERSION 0.0.0 LANGUAGES CXX)
 
 option(NSM_RCHOL "Whether or not rchol should be built" ON)
-option(NSM_TEST "Whether or not tests should be built" ON)
+option(NSM_TEST "Whether or not tests should be built" OFF)
 
 ################################################################################
 
 find_package(armadillo CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(Boost REQUIRED COMPONENTS graph)
+find_package(Boost REQUIRED COMPONENTS graph preprocessor)
 find_package(TBB CONFIG REQUIRED)
 
 ################################################################################
@@ -46,8 +45,8 @@ endif()
 
 add_library(nsm INTERFACE)
 target_include_directories(nsm INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(nsm INTERFACE cxx_std_20)
-target_link_libraries(nsm INTERFACE armadillo Boost::graph nlohmann_json::nlohmann_json TBB::tbb rchol)
+target_compile_features(nsm INTERFACE cxx_std_17)
+target_link_libraries(nsm INTERFACE armadillo Boost::graph Boost::preprocessor TBB::tbb rchol nlohmann_json::nlohmann_json)
 
 ################################################################################
 
@@ -55,7 +54,12 @@ if(NSM_TEST)
     message("-- Building tests")
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/external/lilwil)
     add_library(nsm-test SHARED test/Test.cc)
-    target_link_libraries(nsm-test PUBLIC liblilwil nsm)
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    find_package(magic_enum CONFIG REQUIRED)
+    find_package(fmt CONFIG REQUIRED)
+
+    target_link_libraries(nsm-test PUBLIC liblilwil nsm magic_enum::magic_enum fmt::fmt)
     lilwil_module(nsm-test-module test nsm-test)
 else()
     message("-- Not building tests")

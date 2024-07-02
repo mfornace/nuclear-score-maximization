@@ -2,7 +2,10 @@
     "dependencies": [
         "armadillo",
         "boost-graph",
+        "boost-preprocessor",
         "nlohmann-json",
-        "tbb"
+        "tbb",
+        "magic-enum",
+        "fmt"
     ]
 }

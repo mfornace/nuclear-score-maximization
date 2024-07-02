@@ -1,69 +1,17 @@
 #pragma once
+/**
+    Matrix.h: Typedefs and wrapping facilities for armadillo matrix library
+*/
+
+#include "Common.h"
 #include <armadillo>
-#include <ranges>
 
-#define NSM_IF(...) typename std::enable_if<__VA_ARGS__, bool>::type = 0
+/******************************************************************************************/
 
-#define NSM_ASSERT(cond, ...) {if (!cond) throw ::nsm::Error::from_location(__FILE__, __LINE__, __VA_ARGS__);}
-#define NSM_REQUIRE(x, op, y, ...) NSM_ASSERT(x op y, x, y, __VA_ARGS__)
+// Wrapped armadillo namespace and a few helper types and definitions
 
-namespace nsm {
-
-struct Error : std::runtime_error {
-    using std::runtime_error::runtime_error;
-
-    template <class ...Ts>
-    static Error from_location(std::string_view file, int line, Ts &&...ts) {
-        std::stringstream ss;
-        ss << file << ":" << line << " ";
-        ((ss << ts), ...);
-        return Error(ss.str());
-    }
-};
-
-namespace la = arma;
-using arma::Mat;
-using arma::SpMat;
-using arma::Col;
-using real = double;
-
-template <class T>
-using vec = std::vector<T>;
-
-struct Identity {
-    template <class T>
-    T &&operator()(T &&t) const {return static_cast<T &&>(t);}
-};
-
-template <class O, class V, class F=Identity>
-O vmap(V &&v, F &&f={}) {return std::forward<V>(v) |  std::views::transform(f) | std::ranges::to<O>;}
-
-template <template <class...> class O, class V, class F=Identity>
-auto vmap(V &&v, F &&f={}) {return vmap<O<decltype(f(*v.begin()))>>(std::forward<V>(v), std::forward<F>(f));}
-
-template <class V, class F=Identity>
-auto vmap(V &&v, F &&f={}) {return vmap<std::vector>(std::forward<V>(v), std::forward<F>(f));}
-
-template <class T>
-auto range(T t) {return std::ranges::iota(t);}
-
-template <class B, class E>
-auto range(B b, E e) {return std::ranges::iota(b, e);}
-
-template <class P>
-auto ptr_view(P p, std::size_t n) {return std::ranges::subrange(p, p+n);}
-
-
-/// Detect if a given type is well-formed
-#define NSM_DETECT(NAME, expr) \
-namespace detail { \
-    template <class T, class=void> struct NAME##_t : std::false_type {}; \
-    template <class T> struct NAME##_t<T, std::void_t<expr>> : std::true_type {}; \
-} \
-namespace traits {template <class T> static constexpr bool NAME = detail::NAME##_t<T>::value;}
-
-template <class T>
-using no_qual = std::remove_cv_t<std::remove_reference_t<T>>;
+namespace nsm::la {
+using namespace arma;
 
 NSM_DETECT(has_eval, decltype(std::declval<T>().eval()));
 
@@ -74,17 +22,47 @@ decltype(auto) eval(T &&t) {return std::forward<T>(t).eval();}
 template <class T, NSM_IF(!traits::has_eval<T &&>)>
 decltype(auto) eval(T &&t) {return std::forward<T>(t);}
 
-template <bool B, class T, class U>
-using if_t = std::conditional_t<B, T, U>;
-
 /// Type from evaluating an expression template
 template <class T>
 using eval_result = no_qual<decltype(eval(std::declval<if_t<std::is_array<T>::value, std::decay_t<T>, T>>()))>;
 
-
-
-
 template <class T>
 static constexpr bool is_sparse = arma::is_arma_sparse_type<eval_result<T>>::value;
 
+static_assert(is_sparse<SpMat<real>>);
+static_assert(!is_sparse<Mat<real>>);
+
+template <class T>
+Mat<T> random_spd(uword n) {
+    Mat<T> A(n, n, fill::randn);
+    return A * A.t();
 }
+
+}
+
+/******************************************************************************************/
+
+// Exported types from armadillo
+namespace nsm {
+
+using arma::Col;
+using arma::Mat;
+using arma::SpMat;
+
+// Half-open span type to use with armadillo
+struct span {
+    la::uword b, e;
+    span(la::uword b, la::uword e) : b(b), e(e) {}
+
+    operator la::span() const {return la::span(b, e-1);}
+};
+
+using cspan = span const;
+
+// Overload len() so it works with armadillo types
+template <class T>
+struct Len<Col<T>> {constexpr auto operator()(Col<T> const &t) const {return t.n_rows;}};
+
+}
+
+/******************************************************************************************/
