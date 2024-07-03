@@ -2,7 +2,7 @@
 
 This repository contains the production code used for *Column and row subset selection using nuclear scores: algorithms and theory for Nystrom approximation, CUR decomposition, and graph Laplacian reduction* by Mark Fornace and Michael Lindsey (arXiv, 2024). 
 
-The presented code is in the form of header-only C++17 code. 
+The presented code is in the form of a header-only C++17 library.
 
 CMake may be used to build a test library or to provide an interface to your own codes. If CMake is used:
 - You may add `-DNSM_RCHOL=OFF` to your `cmake` command to disable incorporation of the rchol factorization library
