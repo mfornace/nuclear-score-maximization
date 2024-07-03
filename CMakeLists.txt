@@ -7,7 +7,7 @@ set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg/scripts/buil
 
 ################################################################################
 
-project(nuclear-score-maximization VERSION 0.0.0 LANGUAGES CXX)
+project(nuclear-score-maximization VERSION 1.0.0 LANGUAGES CXX)
 
 option(NSM_RCHOL "Whether or not rchol should be built" ON)
 option(NSM_TEST "Whether or not tests should be built" OFF)
