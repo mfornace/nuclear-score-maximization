@@ -9,7 +9,13 @@ namespace nsm {
 
 /******************************************************************************************/
 
-enum class Selector {direct, greedy, random, uniform, ordered};
+enum class Selector {
+    nuclear_max, // Select columns via greedy nuclear norm maximization
+    diagonal_max, // Select columns via diagonal / determinant maximization
+    diagonal_sample, // Select columns via RPCholesky / randomly pivoted QR
+    uniform_sample, // Select columns via uniform sampling without replacement
+    in_order // Select columns in order: 0, 1, 2, ...
+};
 
 // Matrix-free selection out of any matrix, Laplacian inverse or otherwise
 // - rng: random number generator (like std::mt19337). Must not be null if a random selection method is used
@@ -29,11 +35,11 @@ std::pair<Mat<real>, la::uvec> matrix_free_selection(RNG *rng, E &&e, M &&K, Sel
         if (f.empty()) break;
         la::uword c;
         switch (s) {
-            case Selector::direct: {c = g(f).index_max(); break;}
-            case Selector::greedy: {c = d(f).index_max(); break;}
-            case Selector::random: {c = discrete_distribution(d(f).eval())(*rng); break;}
-            case Selector::uniform: {c = random_range(*rng, 0, std::size(f)); break;}
-            case Selector::ordered: {c = 0; break;}
+            case Selector::nuclear_max: {c = g(f).index_max(); break;}
+            case Selector::diagonal_max: {c = d(f).index_max(); break;}
+            case Selector::diagonal_sample: {c = discrete_distribution(d(f).eval())(*rng); break;}
+            case Selector::uniform_sample: {c = random_range(*rng, 0, std::size(f)); break;}
+            case Selector::in_order: {c = 0; break;}
         }
         c = f(c);
         if (first >= 0 && i == 0) c = first;
@@ -66,11 +72,11 @@ std::pair<Col<real>, la::uvec> deterministic_selection(RNG *rng, E &&e, M &&K, S
         if (f.empty()) break;
         la::uword c;
         switch (s) {
-            case Selector::direct: {c = g(f).index_max(); break;}
-            case Selector::greedy: {c = d(f).index_max(); break;}
-            case Selector::random: {c = discrete_distribution(d(f).eval())(*rng); break;}
-            case Selector::uniform: {c = random_range(*rng, 0, std::size(f)); break;}
-            case Selector::ordered: {c = 0; break;}
+            case Selector::nuclear_max: {c = g(f).index_max(); break;}
+            case Selector::diagonal_max: {c = d(f).index_max(); break;}
+            case Selector::diagonal_sample: {c = discrete_distribution(d(f).eval())(*rng); break;}
+            case Selector::uniform_sample: {c = random_range(*rng, 0, std::size(f)); break;}
+            case Selector::in_order: {c = 0; break;}
         }
         c = f(c);
         idx(t) = e.index(i+c);

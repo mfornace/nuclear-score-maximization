@@ -86,7 +86,7 @@ void evaluate_selection(Executor const &exec, SpMat<T> L, Col<T> h, uint reps, u
     };
     int first = -1;
     for (auto rep : range(reps)) {
-        for (auto s : {Selector::direct, Selector::greedy, Selector::random, Selector::uniform}) {
+        for (auto s : {Selector::nuclear_max, Selector::diagonal_max, Selector::diagonal_sample, Selector::uniform_sample}) {
             callback(entry);
             la::arma_rng::set_seed(seed+rep+3);
             auto &stuff = entry["results"].emplace_back();
@@ -111,8 +111,8 @@ void evaluate_selection(Executor const &exec, SpMat<T> L, Col<T> h, uint reps, u
         print("-- starting inversion");
         auto const K0 = DenseMatrix<real>(stationary_inverse(L, h));
         ExactLaplacianSelect<T> const engine(K0, h, k);
-        for (auto s : {Selector::direct, Selector::greedy, Selector::random, Selector::uniform})
-            for (auto r : range(s == Selector::random || s == Selector::uniform ? reps : 1)) {
+        for (auto s : {Selector::nuclear_max, Selector::diagonal_max, Selector::diagonal_sample, Selector::uniform_sample})
+            for (auto r : range(s == Selector::diagonal_sample || s == Selector::uniform_sample ? reps : 1)) {
                 print("-- doing exact version");
                 auto const [gains, choices] = deterministic_selection(copy(engine), copy(K0), s, k);
                 entry["results"].emplace_back() = {
@@ -166,7 +166,7 @@ UNIT_TEST("cs/exact") = [](Context ct) {
 /******************************************************************************************/
 
 template <class T, class M>
-void test_random(Context ct, M K, uint m) {
+void test_matrix_free(Context ct, M K, uint m) {
     auto chol = ExactSelect<T>(K, 1e-8, m);
     auto rand = RandomizedSelect<T>(K.n(), m);
 
@@ -190,8 +190,8 @@ UNIT_TEST("cs/random") = [](Context ct) {
     using T = real;
     uint const m = 10;
     Mat<T> const K = la::random_spd<T>(20), C = la::chol(K).t();
-    test_random<T>(ct, FactorizedMatrix<T>(K, C), m);
-    test_random<T>(ct, SparseFactorizedMatrix<T>(SpMat<T>(K), SpMat<T>(C)), m);
+    test_matrix_free<T>(ct, FactorizedMatrix<T>(K, C), m);
+    test_matrix_free<T>(ct, SparseFactorizedMatrix<T>(SpMat<T>(K), SpMat<T>(C)), m);
 };
 
 /******************************************************************************************/
@@ -446,7 +446,7 @@ UNIT_TEST("cs/rchol/compare") = [](Context ct, uint seed, uint n, uint k, uint z
     print(K.interpolation.a, K.interpolation.b);
     auto chol = RandomizedLaplacianSelect<T>(h, k);
     DefaultRNG rng;
-    auto const [gains, choices] = matrix_free_selection(&rng, copy(chol), copy(K), Selector::direct, k, z);
+    auto const [gains, choices] = matrix_free_selection(&rng, copy(chol), copy(K), Selector::nuclear_max, k, z);
     print(gains);
 };
 
@@ -473,7 +473,7 @@ UNIT_TEST("cs/exact/compare") = [](Context ct, uint seed, uint n, uint k) {
     auto K = DenseMatrix<T>(K0);
     auto chol = ExactLaplacianSelect<T>(K, h, k);
     DefaultRNG rng;
-    auto const [gains, choices] = deterministic_selection(&rng, chol, K, Selector::direct, k);
+    auto const [gains, choices] = deterministic_selection(&rng, chol, K, Selector::nuclear_max, k);
 };
 
 /******************************************************************************************/
@@ -492,7 +492,7 @@ UNIT_TEST("cs/suitesparse/compare") = [](Context ct, bool order, std::string pat
     entry["trace"] = la::accu(K.diag());
     entry["eigenvalues"] = Col<real>(la::sort(la::eigs_sym(K, k), "descend"));
     DefaultRNG rng;
-    for (auto s : {Selector::direct, Selector::uniform, Selector::greedy, Selector::random}) {
+    for (auto s : {Selector::nuclear_max, Selector::uniform_sample, Selector::diagonal_max, Selector::diagonal_sample}) {
         print("    --", enum_to_string(s));
         auto &e = entry[enum_to_string(s)];
         auto Ks = SparseMatrix<real>(K);
@@ -527,8 +527,8 @@ json suitesparse_svd(Executor const &exec, SpMat<real> const &A, uint k, uint z,
         {"rows", A.n_rows}, {"cols", A.n_cols}, {"nnz", A.n_nonzero}, {"symmetric", A.is_symmetric()}
     };
 
-    for (auto s : {Selector::direct, Selector::uniform, Selector::greedy, Selector::random}) 
-        for (auto t : range(s == Selector::random || s == Selector::uniform || z ? reps : 1))
+    for (auto s : {Selector::nuclear_max, Selector::uniform_sample, Selector::diagonal_max, Selector::diagonal_sample}) 
+        for (auto t : range(s == Selector::diagonal_sample || s == Selector::uniform_sample || z ? reps : 1))
             entry["results"].emplace_back()["method"] = enum_to_string(s);
     print("-- evaluating", std::size(entry.at("results")));
 
@@ -606,8 +606,8 @@ UNIT_TEST("cs/toy-examples/compare") = [](Context ct, std::string file, uint thr
     json entry;
     entry["trace"] = la::accu(K.diag());
     entry["eigenvalues"] = Col<real>(la::sort(la::eig_sym(K), "descend"));
-    for (auto s : {Selector::direct, Selector::uniform, Selector::greedy, Selector::random}) {
-        for (auto t : range(s == Selector::direct || s == Selector::greedy ? 1 : m))
+    for (auto s : {Selector::nuclear_max, Selector::uniform_sample, Selector::diagonal_max, Selector::diagonal_sample}) {
+        for (auto t : range(s == Selector::nuclear_max || s == Selector::diagonal_max ? 1 : m))
             entry["results"].emplace_back()["method"] = enum_to_string(s);
     }
     print("-- starting evaluation");
@@ -632,7 +632,7 @@ UNIT_TEST("cs/toy-examples/check") = [](Context ct, std::string file, uint k) {
     auto Kd = DenseMatrix<real>(K);
     auto chol = ExactSelect<real>(Kd, 1e-8, k);
     DefaultRNG rng;
-    auto const [gains, choices] = deterministic_selection(&rng, chol, Kd, Selector::uniform, k);
+    auto const [gains, choices] = deterministic_selection(&rng, chol, Kd, Selector::uniform_sample, k);
     print(gains);
 };
 
@@ -671,7 +671,7 @@ UNIT_TEST("cs/pathological/compare") = [](Context ct, std::string file, uint rep
     entry["trace"] = la::accu(K.diag());
     entry["eigenvalues"] = Col<real>(la::sort(la::eigs_sym(K, k), "descend"));
     DefaultRNG rng;
-    for (auto rep : range(reps)) for (auto s : {Selector::direct, Selector::uniform, Selector::greedy, Selector::random}) {
+    for (auto rep : range(reps)) for (auto s : {Selector::nuclear_max, Selector::uniform_sample, Selector::diagonal_max, Selector::diagonal_sample}) {
         auto &e = entry["results"].emplace_back();
         e["method"] = enum_to_string(s);
         auto Kd = SparseMatrix<real>(K);
@@ -718,7 +718,7 @@ UNIT_TEST("cs/pathological/laplacian") = [](Context ct, std::string file, uint r
     entry["trace"] = la::accu(K0.diag());
     entry["eigenvalues"] = Col<real>(la::sort(la::eig_sym(K0), "descend"));
     DefaultRNG rng;
-    for (auto rep : range(reps)) for (auto s : {Selector::direct, Selector::uniform, Selector::greedy, Selector::random}) {
+    for (auto rep : range(reps)) for (auto s : {Selector::nuclear_max, Selector::uniform_sample, Selector::diagonal_max, Selector::diagonal_sample}) {
         auto &e = entry["results"].emplace_back();
         e["method"] = enum_to_string(s);
         print(rep, e.at("method"));
