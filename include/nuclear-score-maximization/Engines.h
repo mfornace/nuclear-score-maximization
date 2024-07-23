@@ -10,7 +10,7 @@ namespace nsm {
 
 /******************************************************************************************/
 
-// The following classes are designed to provide a consistent "operator inference" for a PSD matrix
+// The following classes are designed to provide a consistent "operator" interface for a PSD matrix
 // In some cases, the PSD matrix K may be constructed ahead of time (sparse or dense).
 // In others, it is more efficient to hold it in factorized form (K = A A^T, A sparse or dense)
 // Across these use-cases, the algorithms we develop use the interface exemplified below
