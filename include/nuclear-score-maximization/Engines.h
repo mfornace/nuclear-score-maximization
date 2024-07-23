@@ -10,6 +10,39 @@ namespace nsm {
 
 /******************************************************************************************/
 
+// The following classes are designed to provide a consistent "operator inference" for a PSD matrix
+// In some cases, the PSD matrix K may be constructed ahead of time (sparse or dense).
+// In others, it is more efficient to hold it in factorized form (K = A A^T, A sparse or dense)
+// Across these use-cases, the algorithms we develop use the interface exemplified below
+// rather than accessing the matrix in direct subscript notation
+
+// Swap two rows of K (and columns also, since it's symmetric)
+// void pivot(la::uword a, la::uword b)
+
+// Return the diagonal of K, needed for deterministic algorithms
+// Col<T> diagonal() const;
+// Return a particular index on the diagonal
+// T diagonal(uint i) const;
+
+// Return the diagonal of K^2, needed for deterministic algorithms
+// Col<T> square_diagonal() const;
+
+// Return the dense representation of K, for debugging/reference purposes
+// Mat<T> dense() const;
+
+// Number of columns in the square root factorization of K used below in sqrt()
+// auto m() const;
+// Number of columns in K
+// auto n() const;
+
+// Return K * v (matvec) for column or matrix v. If v is not length n, treat v as if padded with zeros to make it length n.
+// template <class V> Mat<T> full(V const &v);
+
+// Return A * v (matvec) for column or matrix v. There is no requirement on A except that K = A A^T and A.n_cols = m()
+// template <class V> Mat<T> sqrt(V const &v) const {return A * v;}
+
+/******************************************************************************************/
+
 // Operator formed as A A^T from given dense matrix A
 template <class T>
 struct DenseSqrtMatrix {
@@ -170,7 +203,7 @@ Mat<T> gaussians(la::uword n, la::uword z) {
 
 /******************************************************************************************/
 
-// Matrix-free selection algorithm, forms base of other algorithms
+// Algorithm 5: Matrix-free selection algorithm, forms base of other algorithms.
 template <class T>
 struct RandomizedSelect {
     Mat<T> U, S;
@@ -236,7 +269,7 @@ struct RandomizedSelect {
 
 /******************************************************************************************/
 
-// Exact selection algorithm which maintains numerator and denominator at all times
+// Algorithm 3: Exact selection algorithm which maintains numerator and denominator at all times
 template <class T>
 struct ExactSelect : RandomizedSelect<T> {
     using base_type = RandomizedSelect<T>;
@@ -280,7 +313,7 @@ struct ExactSelect : RandomizedSelect<T> {
 
 /******************************************************************************************/
 
-// Exact Laplacian selection algorithm which maintains numerator and denominator at all times
+// Algorithm 4: Exact Laplacian selection algorithm which maintains numerator and denominator at all times
 template <class T>
 struct ExactLaplacianSelect : ExactSelect<T> {
     using base_type = ExactSelect<T>;
@@ -373,7 +406,7 @@ struct ExactLaplacianSelect : ExactSelect<T> {
 
 /******************************************************************************************/
 
-// Matrix-free Laplacian selection algorithm
+// Algorithm 6: Matrix-free Laplacian selection algorithm
 template <class T>
 struct RandomizedLaplacianSelect : RandomizedSelect<T> {
     using base_type = RandomizedSelect<T>;
